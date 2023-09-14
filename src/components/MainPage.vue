@@ -2,9 +2,11 @@
   <div>
     <button class="generate-button" :disabled="!!progress" @click="generateStrings">Сгенерировать</button>
     <div class="progress-bar">
+      <div class="progress-bar-saving__fill" :style="{ width: progressSaving + '%' }"></div>
       <div class="progress-bar__fill" :style="{ width: progress + '%' }"></div>
     </div>
-    <div>Сгенерировано: {{ strings.length }}</div>
+    <!-- TODO: Значения загружаются не сразу. Желательно показывать текст, что идёт загрузка -->
+    <div>Сгенерировано: {{ strings.length }} Сохранено: {{ dataSavingLength }}</div>
 
     <input class="search-input" type="text" @input="performSearch" v-model="searchTerm" placeholder="Поиск..." />
 
@@ -35,7 +37,9 @@ export default {
   },
   data() {
     return {
-      totalStrings: 1000000,
+      totalStrings: 100_000,
+      batchSize: 1000,
+      dataSavingLength: 0,
       searchTerm: "",
       strings: [],
       displayedStrings: [],
@@ -46,6 +50,13 @@ export default {
         objName: "strings",
       },
     };
+  },
+  watch: {
+    dataSavingLength() {
+      if (this.dataSavingLength === this.totalStrings) {
+        localStorage.removeItem("inProgress");
+      }
+    },
   },
   computed: {
     totalPages() {
@@ -60,25 +71,24 @@ export default {
     progress() {
       return (this.strings.length / this.totalStrings) * 100;
     },
+    progressSaving() {
+      return (this.dataSavingLength / this.totalStrings) * 100;
+    },
   },
   methods: {
     generateStrings() {
       let i = this.strings.length;
-      const batchSize = 1000;
 
       localStorage.setItem("inProgress", true);
 
       const generationInterval = setInterval(() => {
-        const batchData = this.generateBatchData(batchSize);
+        const batchData = this.generateBatchData(this.batchSize);
         this.strings = this.strings.concat(batchData);
 
-        i += batchSize;
+        i += this.batchSize;
         this.saveDataToIndexedDB(batchData);
 
         if (i >= this.totalStrings) {
-          // Не корректно. Строки могут быть сгенерированы, но не сохранены.
-          // TODO: Стек вызовов saveDataToIndexedDB можно передать в Promise.all и по завершению удалять ключ InProgress
-          localStorage.removeItem("inProgress");
           clearInterval(generationInterval);
         }
       }, 0);
@@ -135,8 +145,9 @@ export default {
         }
 
         addDataRequest.onsuccess = function () {
+          this.dataSavingLength += this.batchSize;
           console.log("Данные успешно добавлены в IndexedDB");
-        };
+        }.bind(this);
 
         addDataRequest.onerror = function (event) {
           console.error("Ошибка при добавлении данных", event.target.error);
@@ -167,7 +178,7 @@ export default {
 
       request.onsuccess = function (event) {
         const db = event.target.result;
-        console.log(db.objectStoreNames, "db");
+
         const transaction = db.transaction(this.dbConfig.objName, "readonly");
         const objectStore = transaction.objectStore(this.dbConfig.objName);
 
@@ -176,6 +187,7 @@ export default {
         getDataRequest.onsuccess = function (event) {
           if (event.target.result && event.target.result.length > 0) {
             this.strings = event.target.result.map((item) => item.value);
+            this.dataSavingLength = this.strings.length;
             console.log("Данные успешно загружены из IndexedDB");
           } else {
             console.log("Данные в IndexedDB не найдены");
@@ -191,9 +203,6 @@ export default {
 
         db.close();
       }.bind(this);
-    },
-    setStrings(strings) {
-      this.strings = strings;
     },
     changePage(newPage) {
       this.currentPage = newPage;
@@ -239,12 +248,23 @@ input.search-input:focus {
   background-color: #f2f2f2;
   border-radius: 5px;
   overflow: hidden;
+  position: relative;
 }
 
 .progress-bar__fill {
+  position: absolute;
   height: 100%;
-  background-color: #e28050;
+  background-color: #e28150ab;
   transition: width 0.3s;
+  z-index: 5;
+}
+
+.progress-bar-saving__fill {
+  position: absolute;
+  height: 100%;
+  background-color: #e28150;
+  transition: width 0.3s;
+  z-index: 10;
 }
 
 .table {
