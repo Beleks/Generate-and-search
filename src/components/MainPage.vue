@@ -37,7 +37,7 @@ export default {
   },
   data() {
     return {
-      totalStrings: 100_000,
+      totalStrings: 10_000_000,
       batchSize: 1000,
       dataSavingLength: 0,
       searchTerm: "",
